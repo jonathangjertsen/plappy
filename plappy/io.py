@@ -172,9 +172,9 @@ class Input(IO):
     """An Input object is an IO object with additional restrictions and has
     different bufstates after load() and tick()."""
 
-    def __lt__(self, other: IO) -> 'Input':
+    def __lt__(self, other: 'Output') -> 'Output':
         """Allows for connections with arrow syntax."""
-        return self - other
+        return other - self
 
     def load(self, buffer: SampleBuffer) -> IO:
         """Load buffer, then set bufstate to filled"""
@@ -193,9 +193,9 @@ class Output(IO):
     different bufstates after load() and tick(). When tick() is called, it
     flushes the contents of the buffer."""
 
-    def __gt__(self, other: Input) -> 'Output':
+    def __gt__(self, other: Input) -> 'Input':
         """Allows for connections with arrow syntax."""
-        return self - other
+        return other - self
 
     def load(self, buffer: SampleBuffer or None) -> 'Output':
         """Load buffer, then set bufstate to ready_to_push"""

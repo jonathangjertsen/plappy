@@ -11,7 +11,7 @@ Classes:
 
 import numpy as np
 
-from plappy.devices import Device
+from plappy.devices import Device, MonoOutputDevice
 from plappy.io import IO, Output
 from plappy.plappyconfig import config
 from plappy.samplebuffer import SampleBuffer
@@ -21,23 +21,7 @@ class Source(Device):
     pass
 
 
-class MonoSource(Source):
-    """A Device with a single Output port"""
-    def __init__(self, label: str):
-        """Initialize with an Output"""
-        super().__init__(label)
-        self.output = Output(label=f"{self.label}-output")
-        self.ios = { self.output, }
-
-    def io(self, label: str = None) -> Output:
-        """Return the single Output port available"""
-        output = self.output
-        if label is not None and output.label != label:
-            raise KeyError(
-                f"Specified label {label} does not match the {type(self).__name__} output label {output.label}"
-            )
-        return output
-
+class MonoSource(Source, MonoOutputDevice):
     def connect(self, other: IO, label: str = None) -> 'MonoSource':
         self.output.connect(other)
         return self

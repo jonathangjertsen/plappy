@@ -19,43 +19,42 @@ with a gain of -6.02 dB (~half amplitude) which is then fed into an inverter. We
  ~~~
 from plappy.sources import NoiseSource
 from plappy.players import Printer
-from plappy.effects import Gain, Inverter
+from plappy.effects import Gain, Inverter, ClipDistortion
+from plappy.util import linear_max
 
 # Create devices
-source = NoiseSource('source', level=8192)
-pre_printer = Printer('printer-pre')
+source = NoiseSource('source', level=linear_max)
+pre_printer = Printer('pre-printer')
 gain = Gain('gain', db=-6.02)
+clip = ClipDistortion('clip', dbfs=-12.0)
 inverter = Inverter('inverter')
-post_printer = Printer('printer-post')
+post_printer = Printer('post-printer')
 
-# Connect them up
-source.output > gain.input - - pre_printer.input
-gain.output > inverter.input
-inverter.output > post_printer.input
-
-# Put them together in a box
-main = (source | pre_printer | gain | inverter | post_printer)
-main.label = 'Main'
+# Connect them up. All devices are single-channel, so we hook them up with these arrows
+source >> pre_printer
+source >> gain >> clip >> inverter >> post_printer
 
 # Run one tick (for real applications, a Sequencer should take care of tick management)
-main.tick()
+source.container.tick()
 ~~~
 
-Example result (half volume and inverted)
+When we call `tick()`, the source generates some noise which flows through the other devices.
+As a result, the post-printer prints data which is halved in volume, then clipped at a quarter of max volume, then inverted:
 
 ~~~
-pre-printer: [-3913  3599  6204 -7265 -1542  3431  2654  2164  7741  3128  6378  4428
- -1424 -1211 -6915  3560  2804 -6386 -1566  4037 -5636  -478  5359 -6635
- -3637 -6039  2733   694 -4006  2892 -4361 -2693 -2169 -4520  -816 -5806
-  3011 -3916  7957 -7121  2841 -6920 -4371   374   939 -3681  5156 -3581
- -6351 -6123 -1117   307 -5293  1146  7149 -2898   974 -3541  2040  -657
- -2523   309 -5558 -3424]
-post-printer: [ 1956 -1799 -3102  3632   771 -1715 -1327 -1082 -3870 -1564 -3189 -2214
-   712   605  3457 -1780 -1402  3193   783 -2018  2818   239 -2679  3317
-  1818  3019 -1366  -347  2003 -1446  2180  1346  1084  2260   408  2903
- -1505  1958 -3978  3560 -1420  3460  2185  -187  -469  1840 -2578  1790
-  3175  3061   558  -153  2646  -573 -3574  1449  -487  1770 -1020   328
-  1261  -154  2779  1712]
+pre-printer: [ 15439  -8894   9090   4853 -27590  -6176  22509 -30694  -3873   1192
+   8998 -12757 -17934   1746   -632 -19368  21752   1100 -19492   1365
+  27210   5705 -21397   9273  -4092  -4057 -24579    723 -11181 -30463
+   -113  19587  17538 -23795  -5415  -3900 -15115  25799   9066 -25771
+  19642   7049  14637  12243 -22226 -30646  -1138  -8064  26361 -16145
+  28395  15851  -1680 -32532   9397   9209  29420  -1020  14751   3208
+  26694   4740 -17183   6346]
+post-printer: [-7720  4447 -4545 -2426  8230  3088 -8230  8230  1936  -596 -4499  6378
+  8230  -873   316  8230 -8230  -550  8230  -682 -8230 -2852  8230 -4636
+  2046  2028  8230  -361  5590  8230    56 -8230 -8230  8230  2707  1950
+  7558 -8230 -4533  8230 -8230 -3524 -7319 -6121  8230  8230   569  4032
+ -8230  8073 -8230 -7926   840  8230 -4698 -4604 -8230   510 -7376 -1604
+ -8230 -2370  8230 -3173]
 ~~~
 
 ## Contributing

@@ -7,8 +7,9 @@ Classes:
 """
 import collections
 
+from plappy.exceptions import ConnectionError
 from plappy.plappyconfig import config
-from plappy.io import IO
+from plappy.io import IO, Input, Output
 from plappy.util import unique_key
 
 class Device(object):
@@ -40,10 +41,6 @@ class Device(object):
         else:
             self.add_subdevice(devices)
         return self
-
-    def __lt__(self, other: 'Device') -> 'Device':
-        """< is equivalent to <="""
-        return self <= other
 
     def __or__(self, other: 'Device') -> 'DeviceCollection':
         """Makes (dev1|dev2) a DeviceConnection which can run the two devices in parallel"""
@@ -92,7 +89,7 @@ class Device(object):
 
     def tick(self) -> 'Device':
         # Load from inputs
-        for io in self.ios:
+        for io in self.ios.values():
             if io.bufstate == config.bufstate.filled:
                 io.tick()
 
@@ -100,7 +97,7 @@ class Device(object):
         self.process()
 
         # Push from outputs
-        for io in self.ios:
+        for io in self.ios.values():
             if io.bufstate == config.bufstate.ready_to_push:
                 io.tick()
 
@@ -113,9 +110,9 @@ class Device(object):
 
         return self
 
+
 class DeviceCollection(Device):
     """A Device subclass used to group other devices without any further structure"""
-
     def __or__(self, other: 'Device') -> 'DeviceCollection':
         """If the other type is a DeviceCollection, merge the subdevices. Otherwise, consume the other Device."""
         if isinstance(other, type(self)):
@@ -126,3 +123,82 @@ class DeviceCollection(Device):
     def __ror__(self, other: 'Device') -> 'DeviceCollection':
         """Equivalent to __or__"""
         return self | other
+
+
+class ContainableDevice(Device):
+    def __init__(self, label: str):
+        super().__init__(label)
+        self.container = None
+
+    def contain(self, other) -> 'ContainableDevice':
+        if self.container is None:
+            if other.container is None:
+                self.container = DeviceCollection(label='container')
+            else:
+                self.container = other.container
+            self.container <= self
+        if other.container is None:
+            other.container = self.container
+            self.container <= other
+        return self
+
+
+class MonoInputDevice(ContainableDevice):
+    def __init__(self, label: str):
+        super().__init__(label)
+        self.input = Input(label=f"{self.label}-input")
+        self.ios[self.input.label] = self.input
+
+    def io(self, label: str = None) -> Input:
+        """Return the single Output port available"""
+        if label is not None and self.input.label != label:
+            raise KeyError(
+                f"Specified label {label} does not match the {type(self).__name__} input label {self.input.label}"
+            )
+        return self.input
+
+    def connect(self, other: IO, label: str = None) -> 'MonoInputDevice':
+        """Connect the input to another"""
+        self.input.connect(other)
+        return self
+
+    def __lt__(self, other: 'MonoOutputDevice') -> 'MonoOutputDevice':
+        self.input < other.output
+        return other
+
+    def __lshift__(self, other: 'MonoOutputDevice') -> 'MonoOutputDevice':
+        return self.contain(other) < other
+
+    def __rrshift__(self, other) -> 'MonoInputDevice':
+        return other >> self
+
+
+class MonoOutputDevice(ContainableDevice):
+    def __init__(self, label: str):
+        super().__init__(label)
+        self.output = Output(label=f"{self.label}-output")
+        self.ios[self.output.label] = self.output
+
+    def io(self, label: str = None) -> Output:
+        """Return the single Output port available"""
+        output = self.output
+        if label is not None and output.label != label:
+            raise KeyError(
+                f"Specified label {label} does not match the {type(self).__name__} output label {output.label}"
+            )
+        return output
+
+    def __gt__(self, other: 'MonoInputDevice') -> 'MonoInputDevice':
+        self.output > other.input
+        return other
+
+    def __rshift__(self, other: 'MonoInputDevice') -> 'MonoInputDevice':
+        return self.contain(other) > other
+
+    def __rlshift__(self, other) -> 'MonoOutputDevice':
+        return other << self
+
+
+class SingleChannelDevice(MonoInputDevice, MonoOutputDevice):
+    def io(self, label: str = None) -> Input:
+        return self.ios[label]

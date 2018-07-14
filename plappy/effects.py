@@ -12,9 +12,10 @@ Classes:
 import numpy as np
 
 from plappy.plappyconfig import config
-from plappy.devices import Device
+from plappy.devices import Device, SingleChannelDevice
 from plappy.io import Input, Output
 from plappy.samplebuffer import SampleBuffer
+from plappy.util import linear, linear_gain
 
 
 class Effect(Device):
@@ -30,25 +31,19 @@ class MultiChannelEffect(Effect):
         super().__init__(label)
         self.inputs = []
         for channel_number in range(num_inputs):
-            self.inputs.append(Input(label=f"{self.label}-input-{channel_number}"))
+            inp = Input(label=f"{self.label}-input-{channel_number}")
+            self.inputs.append(inp)
+            self.ios[inp.label] = inp
 
         self.outputs = []
         for channel_number in range(num_outputs):
-            self.outputs.append(Output(label=f"{self.label}-output-{channel_number}"))
+            outp = Output(label=f"{self.label}-output-{channel_number}")
+            self.outputs.append(outp)
+            self.ios[outp.label] = outp
 
-        self.ios = { *self.inputs, *self.outputs }
 
-
-class SingleChannelEffect(Effect):
+class SingleChannelEffect(Effect, SingleChannelDevice):
     """An Effect with a single Input and a single Output"""
-
-    def __init__(self, label: str):
-        """Initialize with an Input and an Output"""
-        super().__init__(label)
-        self.input = Input(label=f"{self.label}-input")
-        self.output = Output(label=f"{self.label}-output")
-        self.ios = { self.input, self.output, }
-
     def to_multi(self) -> MultiChannelEffect:
         """Convert to an equivalent MultiChannelEffect"""
         effect = MultiChannelEffect(self.label, 0, 0)
@@ -70,6 +65,7 @@ class SingleChannelEffect(Effect):
     def transform(self, data: np.ndarray):
         """Default transformation: do nothing"""
         return data
+
 
 class LinearGain(SingleChannelEffect):
     """Multiplies the input by a gain factor (linear scale)"""
@@ -94,9 +90,19 @@ class Gain(SingleChannelEffect):
     """Multiplies the input by a gain factor (dB scale)"""
     def __init__(self, label: str, db: float=0.0):
         super().__init__(label)
-
         self.db = db
 
     def transform(self, data: np.ndarray) -> np.ndarray:
         """Multiply data by a constant gain factor (dB scale)"""
-        return (data * 10 ** (self.db / 20)).astype(config.buffer_dtype)
+        return (data * linear_gain(self.db)).astype(config.buffer_dtype)
+
+
+class ClipDistortion(SingleChannelEffect):
+    """Clips the input"""
+    def __init__(self, label: str, dbfs: float=0.0):
+        super().__init__(label)
+        self.dbfs = dbfs
+
+    def transform(self, data: np.ndarray) -> np.ndarray:
+        absmax = abs(linear(self.dbfs))
+        return np.clip(data, -absmax, absmax)
