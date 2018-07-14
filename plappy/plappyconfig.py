@@ -10,7 +10,7 @@ from types import SimpleNamespace as sns
 
 config = sns(
     buffer_size = 64,
-    buffer_dtype = np.int32,
+    buffer_dtype = np.int16,
     sample_rate = 44100,
     bufstate = sns(
         empty = 0,
