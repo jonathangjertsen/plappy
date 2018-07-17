@@ -2,7 +2,7 @@ import numpy as np
 
 from plappy.plappyconfig import config
 from plappy.io import Input, Output
-from plappy.sources import NoiseSource
+from plappy.source import NoiseSource
 
 # Create Input and Output ports
 i = Input('input-1')

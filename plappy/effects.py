@@ -11,9 +11,10 @@ Classes:
 """
 import numpy as np
 
-from plappy.plappyconfig import config
-from plappy.devices import Device, SingleChannelDevice
+from plappy.devices import Device
 from plappy.io import Input, Output
+from plappy.mixins import SingleChannelDeviceMixin
+from plappy.plappyconfig import config
 from plappy.samplebuffer import SampleBuffer
 from plappy.util import linear, linear_gain
 
@@ -25,7 +26,6 @@ class Effect(Device):
 
 class MultiChannelEffect(Effect):
     """An Effect with any number of Inputs and Outputs"""
-
     def __init__(self, label: str, num_inputs: int=0, num_outputs: int=0):
         """Initialize with a number of Inputs and a number of Outputs"""
         super().__init__(label)
@@ -42,7 +42,7 @@ class MultiChannelEffect(Effect):
             self.ios[outp.label] = outp
 
 
-class SingleChannelEffect(Effect, SingleChannelDevice):
+class SingleChannelEffect(Effect, SingleChannelDeviceMixin):
     """An Effect with a single Input and a single Output"""
     def to_multi(self) -> MultiChannelEffect:
         """Convert to an equivalent MultiChannelEffect"""

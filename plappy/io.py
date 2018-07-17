@@ -8,12 +8,13 @@ Classes:
 """
 import numpy as np
 
+from plappy.core import Connectable
 from plappy.exceptions import ConnectionError, SelfConnectionError
 from plappy.plappyconfig import config
 from plappy.samplebuffer import SampleBuffer
 
 
-class IO(object):
+class IO(Connectable):
     """A generic Input/Output object.
 
         label (str): Used to identify the IO object
@@ -24,8 +25,7 @@ class IO(object):
 
     def __init__(self, label: str):
         """Initialize IO with a label, connections, and an empty buffer."""
-        self.label = label
-        self.connections = set()
+        super().__init__(label)
         self.buffer = SampleBuffer()
         self.bufstate = config.bufstate.empty
 
@@ -40,46 +40,36 @@ class IO(object):
         )
         return "".join(parts)
 
-    def __str__(self) -> str:
-        """Same as __repr__"""
-        return repr(self)
+    def patch_helper(self):
+        return {
+            'class': type(self).__name__,
+            'label': self.label,
+            'connections': tuple(conn.label for conn in self.connections)
+        }
 
-    def __neg__(self) -> 'IO':
-        """This makes -io the same as io, --io and -- io for a flexible syntax."""
-        return self
-
-    def __sub__(self, other: 'IO') -> 'IO':
-        """This lets you connect two IOs with io1 - io2 or io1 -- io2"""
-        return self.connect(other)
-
-    def __mul__(self, other) -> 'IO':
-        """This lets you connect two IOs with io1 * io2"""
-        return self - other
-
-    def __invert__(self) -> 'IO':
-        """This lets you disconnect an IO with ~io"""
-        return self.disconnect()
-
-    def connected(self, io: 'IO') -> bool:
+    def connected(self, io: 'Connectable') -> bool:
         """Return whether self is connected to io"""
-        return io in self.connections
+        return super().connected(io) or io in self.connections
 
     def disconnected(self) -> bool:
         """Return whether self is completely disconnected"""
-        return len(self.connections) == 0
+        return super().disconnected() or len(self.connections) == 0
 
-    def connect(self, io: 'IO') -> 'IO':
+    def connect(self, conn: 'Connectable', **kwargs) -> 'Connectable':
         """Connect to another IO"""
+        if conn.has_connector():
+            return self.connect(conn.connector(**kwargs))
+
         # If they are already connected, don't do anything
-        if self.connected(io) or io is self:
-            return self
+        if self.connected(conn) or conn is self:
+            return conn
 
         # Check that the two can be connected
-        self.connect_check(io)
-        io.connect_check(self)
+        self.connect_check(conn)
+        conn.connect_check(self)
 
         # Check that all of the connections can be connected to each other
-        connection_union = io.connections | self.connections
+        connection_union = conn.connections | self.connections
         for connection in connection_union:
             # Check each connection with every other connection
             for connection_2 in connection_union:
@@ -87,27 +77,29 @@ class IO(object):
                     connection.connect_check(connection_2)
                     connection_2.connect_check(connection)
 
-            # Check each connection with self and io
+            # Check each connection with self and conn
             self.connect_check(connection)
-            io.connect_check(connection)
+            conn.connect_check(connection)
             connection.connect_check(self)
-            connection.connect_check(io)
+            connection.connect_check(conn)
 
-        # OK. Copy the connection union, then add io to self and self to io.
-        self.connections, io.connections = set(connection_union), set(connection_union)
-        self.connections.add(io)
-        io.connections.add(self)
+        # OK. Copy the connection union, then add conn to self and self to conn.
+        self.connections, conn.connections = set(connection_union), set(connection_union)
+        self.connections.add(conn)
+        conn.connections.add(self)
 
-        # And add io and self to every other connection
+        # And add conn and self to every other connection
         for connection in connection_union:
-            connection.connections.update((self, io))
+            connection.connections.update((self, conn))
 
-        # Return self to allow for further connection in the same statement
-        return self
+        # Return
+        return super().connect(conn, **kwargs)
 
-    def connect_check(self, io: 'IO') -> None:
+    def connect_check(self, conn: 'Connectable') -> None:
         """Raise a ConnectionError if the connection won't work"""
-        if io is self:
+        super().connect_check(conn)
+
+        if conn is self:
             raise SelfConnectionError(f"Attempting to connect {type(self).__name__} '{self.label}' to itself")
 
     def disconnect(self) -> 'IO':
@@ -123,7 +115,7 @@ class IO(object):
         self.connections = set()
 
         # Return self to allow for further connection in the same statement
-        return self
+        return super().disconnect()
 
     def load(self, buffer: SampleBuffer or None) -> 'IO':
         """Load the SampleBuffer into the IO"""
@@ -155,26 +147,38 @@ class IO(object):
         self.clear()
         return contents
 
-    def __lt__(self, other: 'IO') -> 'IO':
-        """Create a useful warning when trying to connect stuff."""
-        raise ConnectionError(f"Arrow (<) must point to an Input, not {type(self).__name__} '{self.label}'")
-
-    def __gt__(self, other: 'IO') -> 'IO':
-        """Create a useful warning when trying to connect stuff."""
-        raise ConnectionError(f"Arrow (<) must point from an Output, not {type(self).__name__} '{self.label}'")
-
     def tick(self) -> 'IO':
         """Called by devices, action is implementation dependent"""
         return self
+
+
+class MultiIO(Connectable):
+    def __init__(self, label: str, ios: set or None = None):
+        super().__init__(label)
+        self.ios = ios if ios is not None else set()
+
+    def add_io(self, io: IO) -> 'MultiIO':
+        self.ios.add(io)
+        return self
+
+    def connect(self, other: 'Connectable', **kwargs):
+        for io in self.ios:
+            io.connect(other, **kwargs)
+        return super().connect(other, **kwargs)
+
+    def onconnect(self, other: 'Connectable', **kwargs):
+        for io in self.ios:
+            io.connect(other, **kwargs)
+        return super().onconnect(other, **kwargs)
 
 
 class Input(IO):
     """An Input object is an IO object with additional restrictions and has
     different bufstates after load() and tick()."""
 
-    def __lt__(self, other: 'Output') -> 'Output':
-        """Allows for connections with arrow syntax."""
-        return other - self
+    def __gt__(self, other: 'IO') -> 'IO':
+        """Create a useful warning when trying to connect stuff."""
+        raise ConnectionError(f"Arrow (<) must point from an Output, not {type(self).__name__} '{self.label}'")
 
     def load(self, buffer: SampleBuffer) -> IO:
         """Load buffer, then set bufstate to filled"""
@@ -193,9 +197,9 @@ class Output(IO):
     different bufstates after load() and tick(). When tick() is called, it
     flushes the contents of the buffer."""
 
-    def __gt__(self, other: Input) -> 'Input':
-        """Allows for connections with arrow syntax."""
-        return other - self
+    def __lt__(self, other: 'IO') -> 'IO':
+        """Create a useful warning when trying to connect stuff."""
+        raise ConnectionError(f"Arrow (<) must point to an Input, not {type(self).__name__} '{self.label}'")
 
     def load(self, buffer: SampleBuffer or None) -> 'Output':
         """Load buffer, then set bufstate to ready_to_push"""
@@ -207,9 +211,10 @@ class Output(IO):
         """Called by devices, pushes content to connections and clears itself."""
         return self.flush()
 
-    def connect_check(self, io: 'IO') -> None:
+    def connect_check(self, conn: 'IO') -> None:
         """Prevent an Output from being connected to another Output"""
-        super().connect_check(io)
+        super().connect_check(conn)
 
-        if isinstance(io, type(self)):
-            raise ConnectionError(f"Cannot connect two Outputs ('{self.label}' and '{io.label}'), use a SimpleMixer or Mixer")
+        if isinstance(conn, type(self)):
+            raise ConnectionError(
+                f"Cannot connect two Outputs ('{self.label}' and '{conn.label}'), use a SimpleMixer or Mixer")

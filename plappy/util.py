@@ -44,3 +44,4 @@ def linear_gain(db: float) -> float:
 def linear(dbfs: float) -> float:
     """Convert from dBFS to linear value"""
     return linear_max * linear_gain(dbfs)
+

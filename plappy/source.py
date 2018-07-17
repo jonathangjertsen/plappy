@@ -11,8 +11,9 @@ Classes:
 
 import numpy as np
 
-from plappy.devices import Device, MonoOutputDevice
-from plappy.io import IO, Output
+from plappy.devices import Device
+from plappy.io import IO
+from plappy.mixins import MonoOutputDeviceMixin, stereo_class
 from plappy.plappyconfig import config
 from plappy.samplebuffer import SampleBuffer
 
@@ -21,9 +22,9 @@ class Source(Device):
     pass
 
 
-class MonoSource(Source, MonoOutputDevice):
-    def connect(self, other: IO, label: str = None) -> 'MonoSource':
-        self.output.connect(other)
+class MonoSource(Source, MonoOutputDeviceMixin):
+    def connect(self, other: IO, **kwargs) -> 'MonoSource':
+        self.output.connect(other, **kwargs)
         return self
 
     def process(self) -> 'MonoSource':
@@ -32,6 +33,7 @@ class MonoSource(Source, MonoOutputDevice):
 
     def generate(self):
         return None
+StereoSource = stereo_class(MonoSource, Source)
 
 
 class SilenceSource(MonoSource):
@@ -43,6 +45,7 @@ class SilenceSource(MonoSource):
                 shape=config.buffer_size
             )
         )
+StereoSilenceSource = stereo_class(SilenceSource, StereoSource)
 
 
 class DCSource(MonoSource):
@@ -59,6 +62,7 @@ class DCSource(MonoSource):
                 fill_value=self.level
             )
         )
+StereoDCSource = stereo_class(DCSource, StereoSource)
 
 
 class NoiseSource(DCSource):
@@ -72,4 +76,4 @@ class NoiseSource(DCSource):
                 size=config.buffer_size
             )
         )
-
+StereoNoiseSource = stereo_class(NoiseSource, StereoSource)
